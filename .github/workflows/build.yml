@@ -78,8 +78,10 @@ jobs:
       run: |
         cd ~/android/system
         source build/envsetup.sh
+        export GOGC=20
+        export GOMEMLIMIT=3GiB
         lunch twrp_ares-ap2a-userdebug
-        GOGC=20 GOMEMLIMIT=3GiB make -j2 recoveryimage 2>&1 | tee build.log
+        make -j2 recoveryimage 2>&1 | tee build.log
         
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
