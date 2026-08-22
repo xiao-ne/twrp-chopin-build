@@ -83,10 +83,10 @@ jobs:
         sudo mkswap /swapfile
         sudo swapon /swapfile
         echo "Swap enabled:" && free -h
-        # Clean build cache
-        make clean 2>/dev/null || true
-        rm -rf out/.soong*
         source build/envsetup.sh
+        # Clean build artifacts
+        rm -rf out/
+        mkdir -p out/
         export GOGC=5
         export GOMEMLIMIT=6GiB
         export ALLOW_MISSING_DEPENDENCIES=true
