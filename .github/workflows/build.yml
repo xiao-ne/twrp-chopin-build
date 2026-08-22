@@ -1,0 +1,54 @@
+name: Build TWRP for Chopin
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        docker image prune -a -f
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libssl-dev libxml-simple-perl lsb-core lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3
+
+    - name: Sync TWRP sources
+      run: |
+        mkdir -p ~/android/system && cd ~/android/system
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
+        repo sync -c --no-tags -j$(nproc) --force-sync
+
+    - name: Apply patches
+      run: |
+        cd ~/android/system
+        git clone --depth=1 https://github.com/xiao-ne/chopin_kernel.git -b backport-4.14.336-A15-etc kernel/xiaomi/mt6893
+        sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/Android.mk
+        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
+        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
+
+    - name: Build TWRP
+      run: |
+        cd ~/android/system
+        source build/envsetup.sh && lunch twrp_ares-ap2a-userdebug
+        make -j$(nproc) recoveryimage 2>&1 | tee build.log
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: twrp-recovery-chopin
+        path: ~/android/system/out/target/product/ares/recovery.img
+        retention-days: 30
