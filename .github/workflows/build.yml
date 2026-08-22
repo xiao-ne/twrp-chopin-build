@@ -83,12 +83,15 @@ jobs:
         sudo mkswap /swapfile
         sudo swapon /swapfile
         echo "Swap enabled:" && free -h
+        # Clean build cache
+        make clean 2>/dev/null || true
+        rm -rf out/.soong*
         source build/envsetup.sh
         export GOGC=5
         export GOMEMLIMIT=6GiB
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch twrp_ares-ap2a-userdebug
-        make -j1 recoveryimage 2>&1 | tee build.log
+        m -j1 recoveryimage 2>&1 | tee build.log
         
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
