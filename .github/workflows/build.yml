@@ -63,11 +63,15 @@ jobs:
         cd ~/android/system
         git clone --depth=1 https://github.com/xiao-ne/chopin_kernel.git -b backport-4.14.336-A15-etc kernel/xiaomi/mt6893 || true
         sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
+        # Fix missing gsi_keys.mk
+        sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
+        # Fix missing gsi_keys.mk
+        sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
 
     - name: Build TWRP
