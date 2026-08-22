@@ -88,7 +88,7 @@ jobs:
         export GOMEMLIMIT=6GiB
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch twrp_ares-ap2a-userdebug
-        make -B -j1 recoveryimage 2>m -j1 recoveryimage 2>&1 | tee build.log1 | tee build.log
+        make -j1 recoveryimage 2>&1 | tee build.log
         
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
