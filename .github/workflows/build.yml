@@ -19,15 +19,30 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libssl-dev libxml-simple-perl lsb-core lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3
+        sudo apt-get install -y \
+          bc bison build-essential ccache curl flex \
+          g++-multilib gcc-multilib git gnupg gperf \
+          imagemagick lib32ncurses-dev lib32readline-dev \
+          lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
+          libssl-dev libxml-simple-perl lsb-core lzop \
+          pngcrush rsync schedtool squashfs-tools xsltproc \
+          zip zlib1g-dev openjdk-17-jdk python3
+
+    - name: Install repo tool
+      run: |
+        mkdir -p ~/.local/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.local/bin/repo
+        chmod a+x ~/.local/bin/repo
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Sync TWRP sources
       run: |
-        mkdir -p ~/android/system && cd ~/android/system
+        mkdir -p ~/android/system
+        cd ~/android/system
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
         repo sync -c --no-tags -j$(nproc) --force-sync
-
-    - name: Apply patches
+        
+    - name: Apply chopin patches
       run: |
         cd ~/android/system
         git clone --depth=1 https://github.com/xiao-ne/chopin_kernel.git -b backport-4.14.336-A15-etc kernel/xiaomi/mt6893
@@ -42,13 +57,16 @@ jobs:
     - name: Build TWRP
       run: |
         cd ~/android/system
-        source build/envsetup.sh && lunch twrp_ares-ap2a-userdebug
+        source build/envsetup.sh
+        lunch twrp_ares-ap2a-userdebug
         make -j$(nproc) recoveryimage 2>&1 | tee build.log
-
-    - name: Upload
+        
+    - name: Upload recovery image
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: twrp-recovery-chopin
-        path: ~/android/system/out/target/product/ares/recovery.img
+        path: |
+          ~/android/system/out/target/product/ares/recovery.img
+          ~/android/system/build.log
         retention-days: 30
