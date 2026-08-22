@@ -78,7 +78,7 @@ jobs:
       run: |
         cd ~/android/system
         # Create swap to avoid OOM
-        sudo fallocate -l 8G /swapfile
+        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null; sudo fallocate -l 8G /swapfile
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
