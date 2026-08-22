@@ -42,12 +42,7 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
         repo sync -c --no-tags -j$(nproc) --force-sync
 
-      run: |
-        cd ~/android/system
-        mkdir -p device/xiaomi/ares
-        # Also try TeamWin
-
-    - name: Sync device tree via manifest
+    - name: Add chopin device tree
       run: |
         cd ~/android/system
         mkdir -p .repo/local_manifests
@@ -60,14 +55,13 @@ jobs:
                    revision="main" />
         </manifest>
         MANIFEST
+        rm -rf device/xiaomi/ares
         repo sync -c --no-tags -j$(nproc) device/xiaomi/ares --force-sync
 
     - name: Apply patches
       run: |
         cd ~/android/system
-        # Clone chopin kernel
         git clone --depth=1 https://github.com/xiao-ne/chopin_kernel.git -b backport-4.14.336-A15-etc kernel/xiaomi/mt6893 || true
-        # Fix libtar Android.mk
         sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
