@@ -84,17 +84,23 @@ jobs:
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
         
-        # Build step 1: generate ninja files
-        echo "=== Step 1: soong + kati ==="
-        make -j1 nothing 2>&1 | tee build_step1.log || true
+        # Full build - let soong/kati/ninja run completely
+        # Use ONE_MAKE process to avoid memory issues
+        echo "=== Starting full build ==="
+        ONE_SHOT_MAKEFILE="bootable/recovery/Android.mk" make -j1 buildresult-droid 2>&1 | tee build_full.log || true
         
-        # Build step 2: use make directly with USE_CCACHE
-        echo "=== Step 2: build recoveryimage ==="
-        make -j1 recoveryimage 2>&1 | tee build_step2.log
+        # Check what targets are available
+        echo "=== Available targets ==="
+        grep -r "recoveryimage\|recovery\.img" out/soong/ 2>/dev/null | head -5 || echo "No recovery targets in soong"
+        grep -r "recoveryimage\|recovery\.img" out/build-*.ninja 2>/dev/null | head -5 || echo "No recovery targets in ninja"
         
-        echo "=== Check result ==="
+        # Try direct make
+        echo "=== Direct make recoveryimage ==="
+        make -j1 recoveryimage 2>&1 | tee -a build_full.log
+        
+        echo "=== Result ==="
         ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
-        tail -5 build_step2.log
+        tail -20 build_full.log
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
@@ -103,6 +109,5 @@ jobs:
         name: twrp-recovery-chopin
         path: |
           ~/android/system/out/target/product/ares/recovery.img
-          ~/android/system/build_step1.log
-          ~/android/system/build_step2.log
+          ~/android/system/build_full.log
         retention-days: 30
