@@ -79,7 +79,7 @@ jobs:
         cd ~/android/system
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
-        make -j$(nproc) recoveryimage 2>&1 | tee build.log
+        make -j2 recoveryimage 2>&1 | tee build.log
         
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
