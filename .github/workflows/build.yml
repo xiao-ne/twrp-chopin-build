@@ -78,7 +78,7 @@ jobs:
       run: |
         cd ~/android/system
         # Create swap to avoid OOM
-        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null; sudo fallocate -l 8G /swapfile
+        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null; sudo fallocate -l 16G /swapfile
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
@@ -86,6 +86,7 @@ jobs:
         source build/envsetup.sh
         export GOGC=5
         export GOMEMLIMIT=6GiB
+        export ALLOW_MISSING_DEPENDENCIES=true
         lunch twrp_ares-ap2a-userdebug
         make -j1 recoveryimage 2>&1 | tee build.log
         
