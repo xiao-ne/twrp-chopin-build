@@ -42,13 +42,10 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
         repo sync -c --no-tags -j$(nproc) --force-sync
 
-    - name: Add chopin device tree
       run: |
         cd ~/android/system
         mkdir -p device/xiaomi/ares
-        git clone --depth=1 https://github.com/xiao-ne/chopin_twrp_device.git device/xiaomi/ares 2>&1 || echo "Clone failed, will use local manifest"
         # Also try TeamWin
-        git clone --depth=1 https://github.com/TeamWin/android_device_xiaomi_ares.git device/xiaomi/ares 2>&1 || true
 
     - name: Sync device tree via manifest
       run: |
