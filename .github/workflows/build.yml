@@ -82,13 +82,19 @@ jobs:
         sudo swapon /swapfile
         
         source build/envsetup.sh
-        export GOGC=5
-        export GOMEMLIMIT=6GiB
-        export ALLOW_MISSING_DEPENDENCIES=true
         lunch twrp_ares-ap2a-userdebug
         
-        # Use mka instead of make - mka handles the build differently
-        mka -j1 recoveryimage 2>&1 | tee build.log
+        # Build step 1: generate ninja files
+        echo "=== Step 1: soong + kati ==="
+        make -j1 nothing 2>&1 | tee build_step1.log || true
+        
+        # Build step 2: use make directly with USE_CCACHE
+        echo "=== Step 2: build recoveryimage ==="
+        make -j1 recoveryimage 2>&1 | tee build_step2.log
+        
+        echo "=== Check result ==="
+        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
+        tail -5 build_step2.log
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
@@ -97,5 +103,6 @@ jobs:
         name: twrp-recovery-chopin
         path: |
           ~/android/system/out/target/product/ares/recovery.img
-          ~/android/system/build.log
+          ~/android/system/build_step1.log
+          ~/android/system/build_step2.log
         retention-days: 30
