@@ -78,8 +78,8 @@ jobs:
       run: |
         cd ~/android/system
         source build/envsetup.sh
-        export GOGC=20
-        export GOMEMLIMIT=3GiB
+        export GOGC=10
+        export GOMEMLIMIT=5GiB
         lunch twrp_ares-ap2a-userdebug
         make -j2 recoveryimage 2>&1 | tee build.log
         
