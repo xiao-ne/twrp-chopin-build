@@ -77,9 +77,15 @@ jobs:
     - name: Build TWRP
       run: |
         cd ~/android/system
+        # Create swap to avoid OOM
+        sudo fallocate -l 8G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo "Swap enabled:" && free -h
         source build/envsetup.sh
-        export GOGC=10
-        export GOMEMLIMIT=5GiB
+        export GOGC=5
+        export GOMEMLIMIT=6GiB
         lunch twrp_ares-ap2a-userdebug
         make -j1 recoveryimage 2>&1 | tee build.log
         
