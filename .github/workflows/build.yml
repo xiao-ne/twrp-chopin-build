@@ -24,7 +24,7 @@ jobs:
           g++-multilib gcc-multilib git gnupg gperf \
           imagemagick lib32ncurses-dev lib32readline-dev \
           lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
-          libssl-dev libxml-simple-perl lsb-core lzop \
+          libssl-dev libxml-simple-perl lzop \
           pngcrush rsync schedtool squashfs-tools xsltproc \
           zip zlib1g-dev openjdk-17-jdk python3
 
@@ -61,35 +61,55 @@ jobs:
     - name: Apply patches
       run: |
         cd ~/android/system
-        git clone --depth=1 https://github.com/xiao-ne/chopin_kernel.git -b backport-4.14.336-A15-etc kernel/xiaomi/mt6893 || true
+        # Fix libtar ndk_platform -> ndk
         sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
-        # Fix missing gsi_keys.mk
-        sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/libtar/Android.mk
+        # Fix recovery Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
+        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
         # Fix missing gsi_keys.mk
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
-        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
+        echo "Patches applied"
 
     - name: Build TWRP
       run: |
         cd ~/android/system
-        # Create swap to avoid OOM
-        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null; sudo fallocate -l 16G /swapfile
+        # Create swap
+        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null
+        sudo fallocate -l 16G /swapfile
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
-        echo "Swap enabled:" && free -h
+        echo "Swap:" && free -h
+        
         source build/envsetup.sh
         export GOGC=5
         export GOMEMLIMIT=6GiB
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch twrp_ares-ap2a-userdebug
-        make -j1 recoveryimage 2>&1 | tee build.log
         
+        # Step 1: Generate ninja files
+        echo "=== Step 1: generating ninja ==="
+        make -j1 recoveryimage 2>&1 | tee build.log || true
+        
+        # Step 2: Check if ninja file exists, then build with ninja directly
+        echo "=== Step 2: checking ninja file ==="
+        ls -la out/combined-*.ninja 2>/dev/null || ls -la out/build-*.ninja 2>/dev/null || echo "No ninja file found"
+        
+        # Step 3: If soong completed, try building with ninja
+        if [ -f "out/combined-twrp_ares.ninja" ]; then
+          echo "=== Step 3: building with ninja ==="
+          prebuilts/build-tools/linux-x86/bin/ninja -f out/combined-twrp_ares.ninja -j1 recoveryimage 2>&1 | tee -a build.log
+        fi
+        
+        # Step 4: Check result
+        echo "=== Result ==="
+        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
+        tail -20 build.log
+
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
       if: always()
