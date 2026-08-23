@@ -81,16 +81,16 @@ jobs:
         sudo mkswap /swapfile
         sudo swapon /swapfile
         
-        source build/envsetup.sh
-        lunch twrp_ares-ap2a-userdebug
-        
-        # Build recoveryimage using make directly
-        echo "=== Build recoveryimage ==="
-        make -j2 recoveryimage 2>&1 | tee build_final.log
-        
-        echo "=== Result ==="
-        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
-        tail -30 build_final.log
+        # Build in single bash session to preserve environment
+        bash -c '
+          source build/envsetup.sh
+          lunch twrp_ares-ap2a-userdebug
+          make clean
+          make -j$(nproc) recoveryimage 2>&1 | tee build_final.log
+          echo "=== Result ==="
+          ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
+          tail -30 build_final.log
+        '
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
