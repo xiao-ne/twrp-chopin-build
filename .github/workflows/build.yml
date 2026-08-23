@@ -84,8 +84,13 @@ jobs:
         
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
-        rm -rf out
-        make -j$(nproc) recoveryimage 2>&1 | tee build_final.log
+        
+        # Try building with lunch first to set up the environment
+        echo "=== Building full system first ==="
+        make -j$(nproc) 2>&1 | tee build_full.log || true
+        
+        echo "=== Building recoveryimage ==="
+        make -j$(nproc) recoveryimage 2>&1 | tee build_final.log || true
         
         echo "=== Result ==="
         ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
@@ -99,4 +104,5 @@ jobs:
         path: |
           ~/android/system/out/target/product/ares/recovery.img
           ~/android/system/build_final.log
+          ~/android/system/build_full.log
         retention-days: 30
