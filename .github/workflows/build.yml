@@ -81,11 +81,13 @@ jobs:
         sudo mkswap /swapfile
         sudo swapon /swapfile
         
-        # Build in single bash session to preserve environment
+        # Build in single bash session
         bash -c '
           source build/envsetup.sh
           lunch twrp_ares-ap2a-userdebug
-          make clean
+          # Remove out directory completely
+          rm -rf out
+          # Build using make with full target
           make -j$(nproc) recoveryimage 2>&1 | tee build_final.log
           echo "=== Result ==="
           ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
