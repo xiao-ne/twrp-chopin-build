@@ -71,28 +71,33 @@ jobs:
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
         echo "Patches applied"
 
-    - name: Build TWRP
+    - name: Create build script
       run: |
+        cat > ~/android/system/build_twrp.sh << 'BUILDSCRIPT'
+        #!/bin/bash
+        set -e
         cd ~/android/system
-        # Create swap
-        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null
-        sudo fallocate -l 16G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
         
-        # Build in single bash session
-        bash -c '
-          source build/envsetup.sh
-          lunch twrp_ares-ap2a-userdebug
-          # Remove out directory completely
-          rm -rf out
-          # Build using make with full target
-          make -j$(nproc) recoveryimage 2>&1 | tee build_final.log
-          echo "=== Result ==="
-          ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
-          tail -30 build_final.log
-        '
+        # Setup environment
+        source build/envsetup.sh
+        lunch twrp_ares-ap2a-userdebug
+        
+        # Clean and build
+        rm -rf out
+        make -j$(nproc) recoveryimage 2>&1 | tee build_final.log
+        
+        echo "=== Result ==="
+        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
+        tail -30 build_final.log
+        BUILDSCRIPT
+        chmod +x ~/android/system/build_twrp.sh
+
+    - name: Build TWRP
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 150
+        max_attempts: 1
+        command: ~/android/system/build_twrp.sh
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
