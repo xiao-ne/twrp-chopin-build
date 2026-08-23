@@ -84,9 +84,9 @@ jobs:
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
         
-        # Full build - no aggressive cleaning
+        # Build recoveryimage using make directly
         echo "=== Build recoveryimage ==="
-        mka -j2 recoveryimage 2>&1 | tee build_final.log
+        make -j2 recoveryimage 2>&1 | tee build_final.log
         
         echo "=== Result ==="
         ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
