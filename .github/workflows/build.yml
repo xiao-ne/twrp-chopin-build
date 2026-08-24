@@ -85,10 +85,6 @@ jobs:
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
         
-        # Try building with lunch first to set up the environment
-        echo "=== Building full system first ==="
-        make -j$(nproc) 2>&1 | tee build_full.log || true
-        
         echo "=== Building recoveryimage ==="
         make -j$(nproc) recoveryimage 2>&1 | tee build_final.log || true
         
