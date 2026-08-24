@@ -85,15 +85,12 @@ jobs:
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
         
-        echo "=== Building recoveryimage ==="
-        # First build all dependencies
-        make -j$(nproc) 2>&1 | tee build_deps.log || true
-        
-        # Then build recoveryimage
-        make -j$(nproc) recoveryimage 2>&1 | tee build_final.log || true
+        echo "=== Building bootimage (recovery-as-boot) ==="
+        # Build bootimage which contains recovery for A/B devices
+        make -j$(nproc) bootimage 2>&1 | tee build_final.log || true
         
         echo "=== Result ==="
-        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
+        ls -la out/target/product/ares/boot.img 2>/dev/null || echo "boot.img NOT found"
         tail -30 build_final.log
 
     - name: Upload recovery image
@@ -102,7 +99,6 @@ jobs:
       with:
         name: twrp-recovery-chopin
         path: |
-          ~/android/system/out/target/product/ares/recovery.img
+          ~/android/system/out/target/product/ares/boot.img
           ~/android/system/build_final.log
-          ~/android/system/build_full.log
         retention-days: 30
