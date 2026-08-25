@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggressively fix fscrypt by commenting out problematic blocks."""
+"""Completely disable fscrypt blocks in libtar."""
 import os
 
 for fname in ['bootable/recovery/libtar/append.c', 'bootable/recovery/libtar/block.c']:
@@ -7,43 +7,45 @@ for fname in ['bootable/recovery/libtar/append.c', 'bootable/recovery/libtar/blo
         print(f'Skip {fname}')
         continue
     with open(fname) as f:
-        lines = f.readlines()
+        content = f.read()
     
-    # Keywords that indicate fscrypt-related problematic code
-    keywords = [
-        'fscrypt_policy_get_struct', 'fscrypt_policy_size',
-        'get_policy_size', 'get_policy_descriptor',
-        'lookup_ref_key(t->th_buf.fep',
-        't->th_buf.fep',
+    # Strategy: wrap entire function bodies that contain fscrypt calls
+    # Look for patterns like: if (...) { ... fscrypt ... }
+    import re
+    
+    # Replace all fscrypt function calls with no-ops
+    replacements = [
+        ('fscrypt_policy_get_struct(', '/* DISABLED fscrypt_policy_get_struct('),
+        ('get_policy_size(', '/* DISABLED get_policy_size('),
+        ('get_policy_descriptor(', '/* DISABLED get_policy_descriptor('),
+        ('lookup_ref_key(t->th_buf.fep', '/* DISABLED lookup_ref_key(t->th_buf.fep'),
+        ('fscrypt_policy_size(', '/* DISABLED fscrypt_policy_size('),
+        ('get_policy_policy(', '/* DISABLED get_policy_policy('),
     ]
     
-    result = []
-    in_skip = False
-    brace_depth = 0
+    for old, new in replacements:
+        content = content.replace(old, new)
     
-    for i, line in enumerate(lines):
-        if in_skip:
-            brace_depth += line.count('{') - line.count('}')
-            if brace_depth <= 0:
-                in_skip = False
-                result.append('#endif /* fscrypt disabled */\n')
-            continue
-        
-        # Check if this line starts a problematic block
-        if any(kw in line for kw in keywords):
-            in_skip = True
-            brace_depth = line.count('{') - line.count('}')
-            result.append('#if 0 /* fscrypt disabled for compatibility */\n')
-            result.append(line)
-            if brace_depth <= 0:
-                in_skip = False
-                result.append('#endif /* fscrypt disabled */\n')
-            continue
-        
+    # Close any open comments
+    # Find lines with DISABLED and add closing */
+    lines = content.split('\n')
+    result = []
+    for line in lines:
+        if 'DISABLED' in line:
+            # Add closing comment at end of line
+            stripped = line.rstrip()
+            if stripped.endswith(';'):
+                line = stripped[:-1] + ' */;\\n'
+            elif stripped.endswith(')'):
+                line = stripped + ' */\\n'
+            else:
+                line = stripped + ' */\\n'
         result.append(line)
     
+    content = ''.join(result)
+    
     with open(fname, 'w') as f:
-        f.writelines(result)
+        f.write(content)
     print(f'Fixed {fname}')
 
 # Fix libtar.h
