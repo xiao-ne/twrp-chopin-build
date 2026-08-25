@@ -13,7 +13,6 @@ jobs:
     steps:
     - name: Free disk space
       run: |
-        # Remove unnecessary tools to free ~30GB
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
         sudo rm -rf /usr/local/lib/node_modules /usr/share/swift /opt/hostedtoolcache
         docker image prune -a -f
@@ -65,6 +64,8 @@ jobs:
     - name: Apply patches
       run: |
         cd ~/android/system
+        
+        # Fix libtar/Android.mk ndk platform references
         sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
         sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
@@ -73,15 +74,60 @@ jobs:
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
-        # Fix libtar fscrypt - wrap broken blocks with #if 0
-        # Based on error line numbers from build log
-        cd ~/android/system
-        # append.c: fscrypt block at lines 146-168
-        sed -i "145a\\#if 0" bootable/recovery/libtar/append.c
-        sed -i "170a\\#endif" bootable/recovery/libtar/append.c
-        # block.c: fscrypt block at lines 584-604
-        sed -i "583a\\#if 0" bootable/recovery/libtar/block.c
-        sed -i "606a\\#endif" bootable/recovery/libtar/block.c
+        
+        echo "=== Fixing libtar fscrypt issues ==="
+        
+        # Fix 1: libtar.h - replace fscrypt_policy macro with explicit struct
+        sed -i 's/fscrypt_policy  \*fep;/struct fscrypt_policy_v1 *fep;/' bootable/recovery/libtar/libtar.h
+        
+        # Fix 2: append.c - comment out all fscrypt-related code blocks
+        # Strategy: use python to find and disable fscrypt code blocks
+        python3 << 'PYEOF'
+import re
+
+for fname in ['bootable/recovery/libtar/append.c', 'bootable/recovery/libtar/block.c']:
+    try:
+        with open(fname) as f:
+            content = f.read()
+    except FileNotFoundError:
+        print(f"Skip {fname} (not found)")
+        continue
+    
+    # Comment out blocks containing fscrypt calls
+    # Pattern: find function calls/variables related to fscrypt
+    fscrypt_patterns = [
+        r'tar_policy_for_encryption\(.*?\)',
+        r'lookup_ref_key\(.*?\)',
+        r'fscrypt_policy_get_struct\(.*?\)',
+        r'get_policy_size\(.*?\)',
+        r'get_policy_descriptor\(.*?\)',
+    ]
+    
+    for pat in fscrypt_patterns:
+        content = re.sub(pat, '/* DISABLED */', content)
+    
+    # Also comment out variable declarations that depend on fscrypt
+    content = re.sub(r'(const char \*tar_policy =.*)', r'/* \1 */', content)
+    content = re.sub(r'(const char \*user_de =.*)', r'/* \1 */', content)  
+    content = re.sub(r'(const char \*system_de =.*)', r'/* \1 */', content)
+    
+    with open(fname, 'w') as f:
+        f.write(content)
+    print(f"Fixed {fname}")
+
+# Also fix libtar.h if needed
+fname = 'bootable/recovery/libtar/libtar.h'
+try:
+    with open(fname) as f:
+        c = f.read()
+    c = c.replace('fscrypt_policy  *fep;', 'struct fscrypt_policy_v1 *fep;')
+    with open(fname, 'w') as f:
+        f.write(c)
+    print(f"Fixed {fname}")
+except FileNotFoundError:
+    pass
+PYEOF
+        
         echo "Patches applied"
 
     - name: Build TWRP
@@ -99,8 +145,6 @@ jobs:
         lunch twrp_ares-ap2a-userdebug
         
         echo "=== Building bootimage (recovery-as-boot) ==="
-        # Build bootimage which contains recovery for A/B devices
-        # Use -j2 to reduce memory/disk pressure
         make -j2 bootimage 2>&1 | tee build_final.log || true
         
         echo "=== Result ==="
