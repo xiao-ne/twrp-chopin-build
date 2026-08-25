@@ -73,9 +73,15 @@ jobs:
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
-        # Fix libtar fscrypt incompatibility with Android 14+ headers
+        # Fix libtar fscrypt - wrap broken blocks with #if 0
+        # Based on error line numbers from build log
         cd ~/android/system
-        python3 $GITHUB_WORKSPACE/fix_fscrypt.py
+        # append.c: fscrypt block at lines 146-168
+        sed -i "145a\\#if 0" bootable/recovery/libtar/append.c
+        sed -i "170a\\#endif" bootable/recovery/libtar/append.c
+        # block.c: fscrypt block at lines 584-604
+        sed -i "583a\\#if 0" bootable/recovery/libtar/block.c
+        sed -i "606a\\#endif" bootable/recovery/libtar/block.c
         echo "Patches applied"
 
     - name: Build TWRP
