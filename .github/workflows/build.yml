@@ -13,8 +13,12 @@ jobs:
     steps:
     - name: Free disk space
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        # Remove unnecessary tools to free ~30GB
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/node_modules /usr/share/swift /opt/hostedtoolcache
         docker image prune -a -f
+        sudo apt-get clean
+        df -h /
 
     - name: Install dependencies
       run: |
@@ -87,7 +91,8 @@ jobs:
         
         echo "=== Building bootimage (recovery-as-boot) ==="
         # Build bootimage which contains recovery for A/B devices
-        make -j$(nproc) bootimage 2>&1 | tee build_final.log || true
+        # Use -j2 to reduce memory/disk pressure
+        make -j2 bootimage 2>&1 | tee build_final.log || true
         
         echo "=== Result ==="
         ls -la out/target/product/ares/boot.img 2>/dev/null || echo "boot.img NOT found"
