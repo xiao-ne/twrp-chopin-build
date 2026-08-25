@@ -73,9 +73,18 @@ jobs:
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
-        # Fix libtar fscrypt - comment out broken function calls
-        sed -i '/fscrypt_policy_get_struct/,+20s/^/\/\//' bootable/recovery/libtar/append.c
-        sed -i '/fscrypt_policy_size/,+20s/^/\/\//' bootable/recovery/libtar/block.c
+        # Fix libtar fscrypt - remove incompatible function calls entirely
+        python3 -c "
+for fname in ['bootable/recovery/libtar/append.c', 'bootable/recovery/libtar/block.c']:
+    try: open(fname)
+    except: continue
+    with open(fname) as f: lines = f.readlines()
+    new = [l for l in lines if not any(fn in l for fn in ['fscrypt_policy_get_struct', 'fscrypt_policy_size', 'get_policy_size', 'get_policy_descriptor', 'lookup_ref_key(t->th_buf.fep', 'get_policy_policy'])]
+    with open(fname, 'w') as f: f.writelines(new)
+    print(f'Cleaned {fname}')
+" || true
+        # Fix struct tag in libtar.h
+        sed -i 's/fscrypt_policy  \*fep;/struct fscrypt_policy_v1 *fep;/' bootable/recovery/libtar/libtar.h
         echo "Patches applied"
 
     - name: Build TWRP
