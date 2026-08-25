@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import os
 
-os.chdir(os.environ.get('WORKDIR', os.getcwd()))
-
 for fname in ['bootable/recovery/libtar/append.c', 'bootable/recovery/libtar/block.c']:
     if not os.path.exists(fname):
         print(f'Skip {fname}')
