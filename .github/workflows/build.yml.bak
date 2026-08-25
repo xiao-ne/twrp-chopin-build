@@ -73,9 +73,9 @@ jobs:
         sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
         sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
-        # Fix libtar fscrypt - comment out broken function calls
-        sed -i '/fscrypt_policy_get_struct/,+20s/^/\/\//' bootable/recovery/libtar/append.c
-        sed -i '/fscrypt_policy_size/,+20s/^/\/\//' bootable/recovery/libtar/block.c
+        # Fix libtar fscrypt incompatibility with Android 14+ headers
+        # Remove fscrypt function calls that use incompatible v1/v2 types
+        python3 fix_fscrypt.py
         echo "Patches applied"
 
     - name: Build TWRP
