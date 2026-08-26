@@ -76,7 +76,7 @@ jobs:
         # Disable fscrypt in libtar - recovery doesn't need it
         # The build system defines -DUSE_FSCRYPT which causes type errors
         # Simple fix: undef it before the problematic includes
-        for f in bootable/recovery/libtar/append.c bootable/recovery/libtar/block.c; do
+        for f in bootable/recovery/libtar/append.c bootable/recovery/libtar/block.c bootable/recovery/libtar/extract.c; do
           sed -i '1i\#undef USE_FSCRYPT' "$f"
         done
         # Fix libtar.h - fscrypt_policy macro conflicts in C mode
@@ -94,18 +94,23 @@ jobs:
         sudo swapon /swapfile
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
-        echo "=== Building bootimage ==="
-        make -j2 bootimage 2>&1 | tee build_final.log || true
+        echo "=== Building recovery image ==="
+        make -j2 recoveryimage 2>&1 | tee build_final.log
+        BUILD_EXIT=$?
         echo "=== Result ==="
-        ls -la out/target/product/ares/boot.img 2>/dev/null || echo "boot.img NOT found"
+        ls -la out/target/product/ares/recovery.img 2>/dev/null || echo "recovery.img NOT found"
         tail -30 build_final.log
+        if [ $BUILD_EXIT -ne 0 ]; then
+          echo "Build failed with exit code $BUILD_EXIT"
+          exit $BUILD_EXIT
+        fi
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
-      if: always()
+      if: success()
       with:
         name: twrp-recovery-chopin
         path: |
-          ~/android/system/out/target/product/ares/boot.img
+          ~/android/system/out/target/product/ares/recovery.img
           ~/android/system/build_final.log
         retention-days: 30
