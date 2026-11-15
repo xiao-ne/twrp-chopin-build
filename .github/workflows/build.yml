@@ -94,16 +94,17 @@ jobs:
         sudo swapon /swapfile
         source build/envsetup.sh
         lunch twrp_ares-ap2a-userdebug
-        echo "=== Building recovery image ==="
-        make -j2 recoveryimage 2>&1 | tee build_final.log
-        BUILD_EXIT=$?
+        # TARGET_NO_RECOVERY=true 的树上 recoveryimage 是空目标：make 会"成功"
+        # 但 ninja 直接报 no work to do，什么都不产。出镜像的是 bootimage。
+        echo "=== Building boot image ==="
+        set +e
+        make -j2 bootimage 2>&1 | tee build_final.log
+        BUILD_EXIT=${PIPESTATUS[0]}
         echo "=== Result ==="
-        ls -la out/target/product/ares/recovery.img out/target/product/ares/boot.img 2>/dev/null
+        echo "make exit: $BUILD_EXIT"
+        ls -l out/target/product/ares/boot.img out/target/product/ares/recovery.img
         tail -30 build_final.log
-        if [ $BUILD_EXIT -ne 0 ]; then
-          echo "Build failed with exit code $BUILD_EXIT"
-          exit $BUILD_EXIT
-        fi
+        exit $BUILD_EXIT
 
     # BOARD_USES_RECOVERY_AS_BOOT + TARGET_NO_RECOVERY 的树，产出是 boot.img，
     # recovery.img 可以完全不存在。以前只 ls recovery.img，"构建成功"其实可能什么都没出。
@@ -121,7 +122,7 @@ jobs:
 
     - name: Upload recovery image
       uses: actions/upload-artifact@v4
-      if: success()
+      if: always()
       with:
         name: twrp-recovery-chopin
         path: |
