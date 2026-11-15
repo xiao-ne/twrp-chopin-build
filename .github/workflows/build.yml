@@ -80,6 +80,9 @@ jobs:
         # get_policy_descriptor 等一整套 API 已经被 vold 删掉了。
         # 详见脚本头部的说明（含为什么必须插在 internal.h 之后）。
         python3 "${GITHUB_WORKSPACE}/fix_fscrypt.py" bootable/recovery
+        # partition.cpp 还在调 vold 早就删掉的 FDE/cryptfs 接口。chopin 是
+        # FBE + metadata 加密，那些分支是死代码，给它们惰性桩即可。
+        python3 "${GITHUB_WORKSPACE}/fix_fde.py" bootable/recovery
         echo "Patches applied"
 
     - name: Build TWRP
