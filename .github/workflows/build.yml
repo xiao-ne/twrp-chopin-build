@@ -1,0 +1,131 @@
+name: Build TWRP for Chopin
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/node_modules /usr/share/swift /opt/hostedtoolcache
+        docker image prune -a -f
+        sudo apt-get clean
+        df -h /
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          bc bison build-essential ccache curl flex \
+          g++-multilib gcc-multilib git gnupg gperf \
+          imagemagick lib32ncurses-dev lib32readline-dev \
+          lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
+          libssl-dev libxml-simple-perl lzop \
+          pngcrush rsync schedtool squashfs-tools xsltproc \
+          zip zlib1g-dev openjdk-17-jdk python3
+
+    - name: Install repo tool
+      run: |
+        mkdir -p ~/.local/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.local/bin/repo
+        chmod a+x ~/.local/bin/repo
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Sync TWRP sources
+      run: |
+        mkdir -p ~/android/system
+        cd ~/android/system
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
+        repo sync -c --no-tags -j$(nproc) --force-sync
+
+    - name: Add chopin device tree
+      run: |
+        cd ~/android/system
+        mkdir -p .repo/local_manifests
+        cat > .repo/local_manifests/chopin.xml << 'MANIFEST'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <project name="xiao-ne/chopin_twrp_device"
+                   path="device/xiaomi/ares"
+                   remote="github"
+                   revision="main" />
+        </manifest>
+        MANIFEST
+        rm -rf device/xiaomi/ares
+        repo sync -c --no-tags -j$(nproc) device/xiaomi/ares --force-sync
+
+    - name: Apply patches
+      run: |
+        cd ~/android/system
+        # Fix libtar/Android.mk ndk platform references
+        sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/libtar/Android.mk
+        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/Android.mk
+        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
+        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
+        sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
+        # Disable fscrypt in libtar - recovery doesn't need it
+        # The build system defines -DUSE_FSCRYPT which causes type errors
+        # Simple fix: undef it before the problematic includes
+        for f in bootable/recovery/libtar/append.c bootable/recovery/libtar/block.c bootable/recovery/libtar/extract.c; do
+          sed -i '1i\#undef USE_FSCRYPT' "$f"
+        done
+        # Fix libtar.h - fscrypt_policy macro conflicts in C mode
+        sed -i 's/fscrypt_policy  \*fep;/struct fscrypt_policy_v1 *fep;/' bootable/recovery/libtar/libtar.h
+        echo "Patches applied"
+
+    - name: Build TWRP
+      shell: bash
+      run: |
+        cd ~/android/system
+        sudo swapoff /swapfile 2>/dev/null; sudo rm -f /swapfile 2>/dev/null
+        sudo fallocate -l 16G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        source build/envsetup.sh
+        lunch twrp_ares-ap2a-userdebug
+        echo "=== Building recovery image ==="
+        make -j2 recoveryimage 2>&1 | tee build_final.log
+        BUILD_EXIT=$?
+        echo "=== Result ==="
+        ls -la out/target/product/ares/recovery.img out/target/product/ares/boot.img 2>/dev/null
+        tail -30 build_final.log
+        if [ $BUILD_EXIT -ne 0 ]; then
+          echo "Build failed with exit code $BUILD_EXIT"
+          exit $BUILD_EXIT
+        fi
+
+    # BOARD_USES_RECOVERY_AS_BOOT + TARGET_NO_RECOVERY 的树，产出是 boot.img，
+    # recovery.img 可以完全不存在。以前只 ls recovery.img，"构建成功"其实可能什么都没出。
+    - name: Verify an image was produced
+      run: |
+        cd ~/android/system
+        ok=0
+        for f in out/target/product/ares/boot.img out/target/product/ares/recovery.img; do
+          if [ -s "$f" ]; then echo "found: $f"; ls -l "$f"; ok=1; fi
+        done
+        if [ "$ok" -ne 1 ]; then
+          echo "neither boot.img nor recovery.img was produced"
+          exit 1
+        fi
+
+    - name: Upload recovery image
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: twrp-recovery-chopin
+        path: |
+          ~/android/system/out/target/product/ares/boot.img
+          ~/android/system/out/target/product/ares/recovery.img
+          ~/android/system/build_final.log
+        retention-days: 30
