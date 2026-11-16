@@ -67,14 +67,13 @@ jobs:
     - name: Apply patches
       run: |
         cd ~/android/system
-        # Fix libtar/Android.mk ndk platform references
-        sed -i 's/android.security.apc-ndk_platform/android.security.apc-ndk/g' bootable/recovery/libtar/Android.mk
-        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/libtar/Android.mk
-        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/libtar/Android.mk
-        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/libtar/Android.mk
-        sed -i 's/android.security.authorization-ndk_platform/android.security.authorization-ndk/g' bootable/recovery/Android.mk
-        sed -i 's/android.security.maintenance-ndk_platform/android.security.maintenance-ndk/g' bootable/recovery/Android.mk
-        sed -i 's/android.system.keystore2-V1-ndk_platform/android.system.keystore2-V4-ndk/g' bootable/recovery/Android.mk
+        # 以前这里把 *_ndk_platform 全换成了 plain _ndk（比如
+        # android.system.keystore2-V1-ndk_platform -> -V4-ndk）。后果是
+        # system/bin/recovery 的 DT_NEEDED 里记下 android.system.keystore2-V4-ndk.so，
+        # 而这个库从来没被装进 recovery ramdisk（ramdisk 里只有 -ndk_platform 版本），
+        # 链接器一启动就找不到库，recovery 起不来 → 无 USB 的硬循环。
+        # 平台版库在 ramdisk 里都是齐的，所以这里不再做替换。
+        # 如果构建报某个 *_ndk_platform 模块找不到，再针对那一个单独处理。
         sed -i "/gsi_keys.mk/d" device/xiaomi/ares/twrp_ares.mk
         # libtar 的 fscrypt 代码在 twrp-14.1 上根本编不过：它调的
         # get_policy_descriptor 等一整套 API 已经被 vold 删掉了。
@@ -111,11 +110,10 @@ jobs:
         tail -30 build_final.log
         exit $BUILD_EXIT
 
-    # TWRP 这棵树打出来的 ramdisk 里 linkerconfig/ld.config.txt 是 0 字节。
-    # 链接器只要看到这个文件就用它当完整配置，空文件 = 没有 namespace，
-    # 连 libc.so 都找不到，/system/bin/init 起不来 → 内核 "No working init found"
-    # 直接 panic 重启。init_fatal_reboot_target 是 init 层参数，救不了这一步。
-    - name: Fix linkerconfig
+    # 原厂 ramdisk 和这机器上能正常启动的 OrangeFox 都**没有** linkerconfig/ld.config.txt，
+    # 而 TWRP 这棵树打出来的是 0 字节。链接器只要看到这个文件就把它当完整配置，
+    # 空文件 = 零 namespace，连 libc.so 都找不到。删掉它，回落到内置默认值。
+    - name: Drop the empty linkerconfig
       run: |
         cd ~/android/system
         python3 "${GITHUB_WORKSPACE}/fix_ldconfig.py" \
