@@ -111,6 +111,17 @@ jobs:
         tail -30 build_final.log
         exit $BUILD_EXIT
 
+    # TWRP 这棵树打出来的 ramdisk 里 linkerconfig/ld.config.txt 是 0 字节。
+    # 链接器只要看到这个文件就用它当完整配置，空文件 = 没有 namespace，
+    # 连 libc.so 都找不到，/system/bin/init 起不来 → 内核 "No working init found"
+    # 直接 panic 重启。init_fatal_reboot_target 是 init 层参数，救不了这一步。
+    - name: Fix linkerconfig
+      run: |
+        cd ~/android/system
+        python3 "${GITHUB_WORKSPACE}/fix_ldconfig.py" \
+          out/target/product/ares/boot.img \
+          out/target/product/ares/boot.img
+
     # BOARD_USES_RECOVERY_AS_BOOT + TARGET_NO_RECOVERY 的树，产出是 boot.img，
     # recovery.img 可以完全不存在。以前只 ls recovery.img，"构建成功"其实可能什么都没出。
     - name: Verify an image was produced
