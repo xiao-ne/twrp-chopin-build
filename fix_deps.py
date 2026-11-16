@@ -136,19 +136,33 @@ def main():
               file=sys.stderr)
         return 1
 
+    def find_lib(name):
+        for p in (product_out / "system/lib64" / name,
+                  product_out / "vendor/lib64" / name,
+                  product_out / "system_ext/lib64" / name):
+            if p.is_file():
+                return p
+        for pat in ("system/apex/*/lib64/" + name,
+                    "system/apex/*/*/lib64/" + name,
+                    "system/apex/*/*/*/lib64/" + name):
+            for p in sorted(product_out.glob(pat)):
+                if p.is_file():
+                    return p
+        return None
+
     added, missing_hard = [], []
+    present = {n.split("/")[-1] for n in by_name
+               if n.startswith("system/lib64/") or n.startswith("vendor/lib64/")}
     for binary in BINARIES:
         e = by_name.get(binary)
         if not e or not e["data"]:
             print("skip %s (absent)" % binary)
             continue
         for lib in elf_needed(e["data"]):
-            if lib in by_name:
+            if lib in present:
                 continue
-            src_lib = product_out / "system/lib64" / lib
-            if not src_lib.is_file():
-                src_lib = product_out / "vendor/lib64" / lib
-            if not src_lib.is_file():
+            src_lib = find_lib(lib)
+            if src_lib is None:
                 missing_hard.append("%s (needed by %s)" % (lib, binary))
                 continue
             fields = list(tmpl["fields"])
@@ -158,7 +172,7 @@ def main():
                 "name": lib_dir + lib,
                 "data": src_lib.read_bytes(),
             })
-            by_name[lib_dir + lib] = entries[-2]
+            present.add(lib)
             added.append(lib)
 
     if not added and not missing_hard:
