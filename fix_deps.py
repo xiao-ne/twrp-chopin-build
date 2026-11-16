@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""确保 recovery ramdisk 里所有 DT_NEEDED 库都在，缺的从构建树补进去。
+"""确保 recovery ramdisk 的启动依赖闭包完整。
 
-起因：bootable/recovery/Android.mk 被改成了链接 android.system.keystore2-V4-ndk，
-recovery 二进制的 DT_NEEDED 里因此记下 android.system.keystore2-V4-ndk.so，但这个库
-从来没被装进 recovery ramdisk（只有 -ndk_platform 那套）。链接器在 main() 之前就
-报 "library not found"，recovery 起不来，整机硬循环，连日志都不留。
+背景：bootable/recovery/Android.mk 被改成了链接 *_ndk（而不是 *_ndk_platform），
+于是 recovery 的 DT_NEEDED 里出现 android.system.keystore2-V4-ndk.so 这类库，
+它们从来没被装进 recovery ramdisk。更麻烦的是**传递依赖**：补进 V4 之后它自己又
+缺 android.hardware.security.keymint-V3-ndk.so，缺一层就整机起不来。
 
-与其追着模块命名改，不如在产物上兜底：解包 ramdisk，把 system/bin/{recovery,init}
-的 DT_NEEDED 全部核对一遍，缺的从 out/target/product/$DEVICE/system/lib64/ 拷进来。
-拷不到就让构建失败并打印清单，不要产出起不来的镜像。
+所以这里从 system/bin/init 和 system/bin/recovery 出发做**传递闭包**：
+逐层把缺的库从 out/target/product/$DEVICE 里找出来补进 ramdisk，直到收敛；
+启动链上补不到的库直接让构建失败（以前就是默默产出起不来的镜像，浪费一整轮刷机）。
+启动链之外的缺失（比如 openaes -> libopenaes.so，OrangeFox 也有）只告警。
 
 用法: fix_deps.py <boot.img> <product_out_dir> [输出路径=原地]
 """
@@ -19,7 +20,8 @@ import struct
 import sys
 
 PAD_BLOCK = 512
-BINARIES = ("system/bin/recovery", "system/bin/init")
+ROOTS = ("system/bin/recovery", "system/bin/init")
+LIB_DIRS = ("system/lib64/", "vendor/lib64/", "system/lib/", "vendor/lib/")
 
 
 def read_entries(rd):
@@ -58,12 +60,12 @@ def write_entries(entries):
 
 
 def elf_needed(data):
-    if data[:4] != b"\x7fELF" or data[4] != 2:
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2:
         return []
     e_phoff, = struct.unpack_from("<Q", data, 0x20)
     e_phentsize, e_phnum = struct.unpack_from("<HH", data, 0x36)
     dyn = None
-    load = []
+    loads = []
     for i in range(e_phnum):
         o = e_phoff + i * e_phentsize
         p_type, = struct.unpack_from("<I", data, o)
@@ -73,12 +75,12 @@ def elf_needed(data):
         if p_type == 2:
             dyn = (p_offset, p_filesz)
         elif p_type == 1:
-            load.append((p_vaddr, p_offset, p_filesz))
+            loads.append((p_vaddr, p_offset, p_filesz))
     if dyn is None:
         return []
-    needed, strtab = [], None
     off, size = dyn
-    for j in range(0, size, 16):
+    needed, strtab = [], None
+    for j in range(0, size - 15, 16):
         tag, val = struct.unpack_from("<qQ", data, off + j)
         if tag == 0:
             break
@@ -86,10 +88,10 @@ def elf_needed(data):
             needed.append(val)
         elif tag == 5:
             strtab = val
-    if strtab is None:
+    if strtab is None or not needed:
         return []
     foff = None
-    for vaddr, offset, filesz in load:
+    for vaddr, offset, filesz in loads:
         if vaddr <= strtab < vaddr + filesz:
             foff = offset + (strtab - vaddr)
             break
@@ -97,8 +99,11 @@ def elf_needed(data):
         return []
     names = []
     for n in needed:
-        end = data.index(b"\0", foff + n)
-        names.append(data[foff + n:end].decode())
+        try:
+            end = data.index(b"\0", foff + n)
+        except ValueError:
+            continue
+        names.append(data[foff + n:end].decode("utf-8", "replace"))
     return names
 
 
@@ -110,7 +115,7 @@ def main():
     img = bytearray(open(src, "rb").read())
     total = len(img)
     page = struct.unpack_from("<I", img, 36)[0]
-    assert struct.unpack_from("<I", img, 40)[0] == 2
+    assert struct.unpack_from("<I", img, 40)[0] == 2, "only boot header v2"
     ks = struct.unpack_from("<I", img, 8)[0]
     rs = struct.unpack_from("<I", img, 16)[0]
     dtb_size = struct.unpack_from("<I", img, 1648)[0]
@@ -127,19 +132,9 @@ def main():
     entries = read_entries(rd)
     by_name = {e["name"]: e for e in entries}
 
-    # 从现有库拿一个模板（uid/gid/mode/时间戳）
-    lib_dir = "system/lib64/"
-    tmpl = next((e for n, e in by_name.items()
-                 if n.startswith(lib_dir) and n.endswith(".so") and e["data"]), None)
-    if tmpl is None:
-        print("ERROR: ramdisk has no system/lib64/*.so to use as a template",
-              file=sys.stderr)
-        return 1
-
     def find_lib(name):
-        for p in (product_out / "system/lib64" / name,
-                  product_out / "vendor/lib64" / name,
-                  product_out / "system_ext/lib64" / name):
+        for d in ("system/lib64", "vendor/lib64", "system/lib", "vendor/lib", "system_ext/lib64"):
+            p = product_out / d / name
             if p.is_file():
                 return p
         for pat in ("system/apex/*/lib64/" + name,
@@ -150,42 +145,69 @@ def main():
                     return p
         return None
 
-    added, missing_hard = [], []
-    present = {n.split("/")[-1] for n in by_name
-               if n.startswith("system/lib64/") or n.startswith("vendor/lib64/")}
-    for binary in BINARIES:
-        e = by_name.get(binary)
-        if not e or not e["data"]:
-            print("skip %s (absent)" % binary)
+    tmpl = next((e for n, e in by_name.items()
+                 if n.startswith("system/lib64/") and n.endswith(".so") and e["data"]), None)
+    if tmpl is None:
+        print("ERROR: no system/lib64/*.so in ramdisk to use as a template", file=sys.stderr)
+        return 1
+
+    lib_path_of = {}
+    for n in by_name:
+        if n.startswith(LIB_DIRS):
+            lib_path_of.setdefault(n.split("/")[-1], n)
+    injected, missing_boot = [], []
+
+    # 从 roots 做 BFS，只沿启动链
+    queue = [r for r in ROOTS if r in by_name]
+    seen = set()
+    while queue:
+        cur = queue.pop(0)
+        if cur in seen or cur not in by_name:
             continue
-        for lib in elf_needed(e["data"]):
-            if lib in present:
+        seen.add(cur)
+        for lib in elf_needed(by_name[cur]["data"]):
+            if lib in lib_path_of:
+                queue.append(lib_path_of[lib])
                 continue
             src_lib = find_lib(lib)
             if src_lib is None:
-                missing_hard.append("%s (needed by %s)" % (lib, binary))
+                missing_boot.append("%s (needed by %s)" % (lib, cur))
                 continue
             fields = list(tmpl["fields"])
             fields[11] = 0
-            entries.insert(len(entries) - 1, {
-                "fields": fields,
-                "name": lib_dir + lib,
-                "data": src_lib.read_bytes(),
-            })
-            present.add(lib)
-            added.append(lib)
+            entries.insert(len(entries) - 1,
+                           {"fields": fields, "name": "system/lib64/" + lib,
+                            "data": src_lib.read_bytes()})
+            by_name["system/lib64/" + lib] = entries[-2]
+            lib_path_of[lib] = "system/lib64/" + lib
+            injected.append(lib)
+            queue.append("system/lib64/" + lib)
 
-    if not added and not missing_hard:
-        print("all DT_NEEDED libs already present - nothing to do")
-        return 0
+    # 启动链之外的缺失只告警
+    warn = []
+    for name, e in by_name.items():
+        if name in seen or not e["data"][:4] == b"\x7fELF":
+            continue
+        for lib in elf_needed(e["data"]):
+            if lib not in lib_path_of:
+                warn.append("%s -> %s" % (name, lib))
 
-    for lib in added:
-        print("added %s%s" % (lib_dir, lib))
-    if missing_hard:
-        print("\nERROR: cannot resolve these libraries:", file=sys.stderr)
-        for m in missing_hard:
+    print("injected %d lib(s): %s" % (len(injected), ", ".join(injected) or "none"))
+    if warn:
+        print("warnings (not on the boot chain):")
+        for w in sorted(set(warn))[:10]:
+            print("   ", w)
+
+    if missing_boot:
+        print("\nERROR: boot chain is incomplete, refusing to ship a dead image:",
+              file=sys.stderr)
+        for m in missing_boot:
             print("   ", m, file=sys.stderr)
         return 1
+
+    if not injected:
+        print("boot chain already complete - nothing to do")
+        return 0
 
     new_rd = write_entries(entries)
     new_gz = gzip.compress(new_rd, 9)
